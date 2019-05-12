@@ -4,15 +4,11 @@
     "methods" : ["GET", "POST"],
     "url" : {
       "path" : "/_mtermvectors",
-      "paths" : ["/_mtermvectors", "/{index}/_mtermvectors", "/{index}/{type}/_mtermvectors"],
+      "paths" : ["/_mtermvectors", "/{index}/_mtermvectors"],
       "parts" : {
         "index" : {
          "type" : "string",
          "description" : "The index in which the document resides."
-        },
-        "type" : {
-          "type" : "string",
-          "description" : "The type of the document."
         }
       },
       "params" : {

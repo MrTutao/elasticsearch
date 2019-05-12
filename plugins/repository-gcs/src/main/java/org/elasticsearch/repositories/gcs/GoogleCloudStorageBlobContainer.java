@@ -26,8 +26,9 @@ import org.elasticsearch.common.blobstore.support.AbstractBlobContainer;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.FileAlreadyExistsException;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 class GoogleCloudStorageBlobContainer extends AbstractBlobContainer {
 
@@ -65,11 +66,13 @@ class GoogleCloudStorageBlobContainer extends AbstractBlobContainer {
     }
 
     @Override
-    public void writeBlob(String blobName, InputStream inputStream, long blobSize) throws IOException {
-        if (blobExists(blobName)) {
-            throw new FileAlreadyExistsException("blob [" + blobName + "] already exists, cannot overwrite");
-        }
-        blobStore.writeBlob(buildKey(blobName), inputStream, blobSize);
+    public void writeBlob(String blobName, InputStream inputStream, long blobSize, boolean failIfAlreadyExists) throws IOException {
+        blobStore.writeBlob(buildKey(blobName), inputStream, blobSize, failIfAlreadyExists);
+    }
+
+    @Override
+    public void writeBlobAtomic(String blobName, InputStream inputStream, long blobSize, boolean failIfAlreadyExists) throws IOException {
+        writeBlob(blobName, inputStream, blobSize, failIfAlreadyExists);
     }
 
     @Override
@@ -78,11 +81,11 @@ class GoogleCloudStorageBlobContainer extends AbstractBlobContainer {
     }
 
     @Override
-    public void move(String sourceBlobName, String targetBlobName) throws IOException {
-        blobStore.moveBlob(buildKey(sourceBlobName), buildKey(targetBlobName));
+    public void deleteBlobsIgnoringIfNotExists(List<String> blobNames) throws IOException {
+        blobStore.deleteBlobsIgnoringIfNotExists(blobNames.stream().map(this::buildKey).collect(Collectors.toList()));
     }
 
-    protected String buildKey(String blobName) {
+    private String buildKey(String blobName) {
         assert blobName != null;
         return path + blobName;
     }

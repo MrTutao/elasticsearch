@@ -47,6 +47,12 @@ setup() {
     if [ "$(cat upgrade_from_version)" == "$(cat version)" ]; then
         sameVersion="true"
     fi
+    # TODO: this needs to conditionally change based on version > 6.3.0
+    if [ -f upgrade_is_oss ]; then
+      export PACKAGE_NAME="elasticsearch-oss"
+    else    
+      skip "upgrade cannot happen from pre 6.3.0 to elasticsearch-oss"
+    fi
 }
 
 @test "[UPGRADE] install old version" {
@@ -54,8 +60,17 @@ setup() {
     install_package -v $(cat upgrade_from_version)
 }
 
+@test "[UPGRADE] modify keystore" {
+    # deliberately modify the keystore to force it to be preserved during package upgrade
+    export_elasticsearch_paths
+    sudo -E "$ESHOME/bin/elasticsearch-keystore" remove keystore.seed
+    sudo -E echo keystore_seed | "$ESHOME/bin/elasticsearch-keystore" add -x keystore.seed
+}
+
 @test "[UPGRADE] start old version" {
+    export JAVA_HOME=$SYSTEM_JAVA_HOME
     start_elasticsearch_service
+    unset JAVA_HOME
 }
 
 @test "[UPGRADE] check elasticsearch version is old version" {
