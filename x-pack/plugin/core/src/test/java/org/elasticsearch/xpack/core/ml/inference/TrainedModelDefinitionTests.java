@@ -5,16 +5,12 @@
  */
 package org.elasticsearch.xpack.core.ml.inference;
 
-import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.DeprecationHandler;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
-import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentFactory;
-import org.elasticsearch.common.xcontent.XContentHelper;
-import org.elasticsearch.common.xcontent.XContentParseException;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.search.SearchModule;
@@ -22,6 +18,7 @@ import org.elasticsearch.test.AbstractSerializingTestCase;
 import org.elasticsearch.xpack.core.ml.inference.preprocessing.FrequencyEncodingTests;
 import org.elasticsearch.xpack.core.ml.inference.preprocessing.OneHotEncodingTests;
 import org.elasticsearch.xpack.core.ml.inference.preprocessing.TargetMeanEncodingTests;
+import org.elasticsearch.xpack.core.ml.inference.trainedmodel.TargetType;
 import org.elasticsearch.xpack.core.ml.inference.trainedmodel.ensemble.Ensemble;
 import org.elasticsearch.xpack.core.ml.inference.trainedmodel.ensemble.EnsembleTests;
 import org.elasticsearch.xpack.core.ml.inference.trainedmodel.tree.Tree;
@@ -35,8 +32,6 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.elasticsearch.xpack.core.ml.utils.ToXContentParams.FOR_INTERNAL_STORAGE;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 
@@ -59,19 +54,13 @@ public class TrainedModelDefinitionTests extends AbstractSerializingTestCase<Tra
     }
 
     @Override
-    protected ToXContent.Params getToXContentParams() {
-        return new ToXContent.MapParams(Collections.singletonMap(FOR_INTERNAL_STORAGE, "true"));
-    }
-
-    @Override
     protected boolean assertToXContentEquivalence() {
         return false;
     }
 
-    public static TrainedModelDefinition.Builder createRandomBuilder(String modelId) {
+    public static TrainedModelDefinition.Builder createRandomBuilder(TargetType targetType) {
         int numberOfProcessors = randomIntBetween(1, 10);
         return new TrainedModelDefinition.Builder()
-            .setModelId(modelId)
             .setPreProcessors(
                 randomBoolean() ? null :
                     Stream.generate(() -> randomFrom(FrequencyEncodingTests.createRandom(),
@@ -79,10 +68,14 @@ public class TrainedModelDefinitionTests extends AbstractSerializingTestCase<Tra
                         TargetMeanEncodingTests.createRandom()))
                         .limit(numberOfProcessors)
                         .collect(Collectors.toList()))
-            .setTrainedModel(randomFrom(TreeTests.createRandom(), EnsembleTests.createRandom()));
+            .setTrainedModel(randomFrom(TreeTests.createRandom(targetType), EnsembleTests.createRandom(targetType)));
     }
 
-    private static final String ENSEMBLE_MODEL = "" +
+    public static TrainedModelDefinition.Builder createRandomBuilder() {
+        return createRandomBuilder(randomFrom(TargetType.values()));
+    }
+
+    public static final String ENSEMBLE_MODEL = "" +
         "{\n" +
         "  \"preprocessors\": [\n" +
         "    {\n" +
@@ -201,7 +194,8 @@ public class TrainedModelDefinitionTests extends AbstractSerializingTestCase<Tra
         "    }\n" +
         "  }\n" +
         "}";
-    private static final String TREE_MODEL = "" +
+
+    public static final String TREE_MODEL = "" +
         "{\n" +
         "  \"preprocessors\": [\n" +
         "    {\n" +
@@ -283,27 +277,9 @@ public class TrainedModelDefinitionTests extends AbstractSerializingTestCase<Tra
         assertThat(definition.getTrainedModel().getClass(), equalTo(Tree.class));
     }
 
-    public void testStrictParser() throws IOException {
-        TrainedModelDefinition.Builder builder = createRandomBuilder("asdf");
-        BytesReference reference = XContentHelper.toXContent(builder.build(),
-            XContentType.JSON,
-            new ToXContent.MapParams(Collections.singletonMap(FOR_INTERNAL_STORAGE, "true")),
-            false);
-
-        XContentParser parser = XContentHelper.createParser(xContentRegistry(),
-            DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-            reference,
-            XContentType.JSON);
-
-        XContentParseException exception = expectThrows(XContentParseException.class,
-            () -> TrainedModelDefinition.fromXContent(parser, false));
-
-        assertThat(exception.getMessage(), containsString("[trained_model_definition] unknown field [doc_type]"));
-    }
-
     @Override
     protected TrainedModelDefinition createTestInstance() {
-        return createRandomBuilder(randomAlphaOfLength(10)).build();
+        return createRandomBuilder().build();
     }
 
     @Override
@@ -330,5 +306,4 @@ public class TrainedModelDefinitionTests extends AbstractSerializingTestCase<Tra
         TrainedModelDefinition test = createTestInstance();
         assertThat(test.ramBytesUsed(), greaterThan(0L));
     }
-
 }

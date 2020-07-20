@@ -19,7 +19,6 @@
 
 package org.elasticsearch.search.builder;
 
-import org.apache.logging.log4j.LogManager;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.Booleans;
 import org.elasticsearch.common.Nullable;
@@ -29,7 +28,6 @@ import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
-import org.elasticsearch.common.logging.DeprecationLogger;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.ToXContentFragment;
 import org.elasticsearch.common.xcontent.ToXContentObject;
@@ -47,7 +45,7 @@ import org.elasticsearch.search.aggregations.AggregatorFactories;
 import org.elasticsearch.search.aggregations.PipelineAggregationBuilder;
 import org.elasticsearch.search.collapse.CollapseBuilder;
 import org.elasticsearch.search.fetch.StoredFieldsContext;
-import org.elasticsearch.search.fetch.subphase.DocValueFieldsContext.FieldAndFormat;
+import org.elasticsearch.search.fetch.subphase.FetchDocValuesContext.FieldAndFormat;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.elasticsearch.search.internal.SearchContext;
@@ -78,9 +76,6 @@ import static org.elasticsearch.search.internal.SearchContext.TRACK_TOTAL_HITS_D
  * @see org.elasticsearch.action.search.SearchRequest#source(SearchSourceBuilder)
  */
 public final class SearchSourceBuilder implements Writeable, ToXContentObject, Rewriteable<SearchSourceBuilder> {
-    private static final DeprecationLogger deprecationLogger =
-        new DeprecationLogger(LogManager.getLogger(SearchSourceBuilder.class));
-
     public static final ParseField FROM_FIELD = new ParseField("from");
     public static final ParseField SIZE_FIELD = new ParseField("size");
     public static final ParseField TIMEOUT_FIELD = new ParseField("timeout");
@@ -177,6 +172,7 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
 
     private SuggestBuilder suggestBuilder;
 
+    @SuppressWarnings("rawtypes")
     private List<RescorerBuilder> rescoreBuilders;
 
     private List<IndexBoost> indexBoosts = new ArrayList<>();
@@ -335,10 +331,11 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
 
     /**
      * From index to start the search from. Defaults to {@code 0}.
+     * Must be a positive value or 0.
      */
     public SearchSourceBuilder from(int from) {
         if (from < 0) {
-            throw new IllegalArgumentException("[from] parameter cannot be negative");
+            throw new IllegalArgumentException("[from] parameter cannot be negative but was [" + from + "]");
         }
         this.from = from;
         return this;
@@ -692,6 +689,7 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
     /**
      * Gets the bytes representing the rescore builders for this request.
      */
+    @SuppressWarnings("rawtypes")
     public List<RescorerBuilder> rescores() {
         return rescoreBuilders;
     }
@@ -921,6 +919,7 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
      * infinitely.
      */
     @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public SearchSourceBuilder rewrite(QueryRewriteContext context) throws IOException {
         assert (this.equals(shallowCopy(queryBuilder, postQueryBuilder, aggregations, sliceBuilder, sorts, rescoreBuilders,
             highlightBuilder)));
@@ -956,14 +955,15 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
     /**
      * Create a shallow copy of this builder with a new slice configuration.
      */
-    public SearchSourceBuilder copyWithNewSlice(SliceBuilder slice) {
-        return shallowCopy(queryBuilder, postQueryBuilder, aggregations, slice, sorts, rescoreBuilders, highlightBuilder);
+    public SearchSourceBuilder shallowCopy() {
+        return shallowCopy(queryBuilder, postQueryBuilder, aggregations, sliceBuilder, sorts, rescoreBuilders, highlightBuilder);
     }
 
     /**
      * Create a shallow copy of this source replaced {@link #queryBuilder}, {@link #postQueryBuilder}, and {@link #sliceBuilder}. Used by
-     * {@link #rewrite(QueryRewriteContext)} and {@link #copyWithNewSlice(SliceBuilder)}.
+     * {@link #rewrite(QueryRewriteContext)}}.
      */
+    @SuppressWarnings("rawtypes")
     private SearchSourceBuilder shallowCopy(QueryBuilder queryBuilder, QueryBuilder postQueryBuilder,
                                             AggregatorFactories.Builder aggregations, SliceBuilder slice, List<SortBuilder<?>> sorts,
                                             List<RescorerBuilder> rescoreBuilders, HighlightBuilder highlightBuilder) {
@@ -1023,7 +1023,7 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
                 currentFieldName = parser.currentName();
             } else if (token.isValue()) {
                 if (FROM_FIELD.match(currentFieldName, parser.getDeprecationHandler())) {
-                    from = parser.intValue();
+                    from(parser.intValue());
                 } else if (SIZE_FIELD.match(currentFieldName, parser.getDeprecationHandler())) {
                     size = parser.intValue();
                 } else if (TIMEOUT_FIELD.match(currentFieldName, parser.getDeprecationHandler())) {
@@ -1071,19 +1071,6 @@ public final class SearchSourceBuilder implements Writeable, ToXContentObject, R
                     scriptFields = new ArrayList<>();
                     while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
                         scriptFields.add(new ScriptField(parser));
-                    }
-                } else if (INDICES_BOOST_FIELD.match(currentFieldName, parser.getDeprecationHandler())) {
-                    deprecationLogger.deprecated(
-                        "Object format in indices_boost is deprecated, please use array format instead");
-                    while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
-                        if (token == XContentParser.Token.FIELD_NAME) {
-                            currentFieldName = parser.currentName();
-                        } else if (token.isValue()) {
-                            indexBoosts.add(new IndexBoost(currentFieldName, parser.floatValue()));
-                        } else {
-                            throw new ParsingException(parser.getTokenLocation(), "Unknown key for a " + token +
-                                " in [" + currentFieldName + "].", parser.getTokenLocation());
-                        }
                     }
                 } else if (AGGREGATIONS_FIELD.match(currentFieldName, parser.getDeprecationHandler())
                         || AGGS_FIELD.match(currentFieldName, parser.getDeprecationHandler())) {
